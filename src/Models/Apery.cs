@@ -61,24 +61,25 @@ namespace AperyGenerateTeacherGUI.Models
                 //わざわざランダムで生成するのではなくGuidでいいのではと思うのだけど何か理由があるのだろうか
                 var outFile = $"out_{RandomString(20)}.fspe";
 
-
+                //ReleaseBuildだとこの辺があやしい
                 var cmd = $"make_teacher roots.fsp {outFile} {threads} {teacherNodes}";
                 this._aperyInstance.StandardInput.WriteLine(cmd);
 
-                var line = "";
 
-                while ((line = this._aperyInstance.StandardOutput.ReadLine()) != null)
+                //line = "";
+                //while ((line = this._aperyInstance.StandardOutput.ReadLine()) != null)
+                while (true)
                 {
+                    var line = this._aperyInstance.StandardOutput.ReadLine();
                     this.Log = line;
 
+                    if (string.IsNullOrEmpty(line)) continue;
                     if (Regex.IsMatch(line, "^Made"))
                     {
                         break;
                     }
                 }
 
-
-                //ここでプロセス殺さない
                 //process.StandardInput.WriteLine("quit");
                 //while ((line = process.StandardOutput.ReadLine()) != null)
                 //    ;
