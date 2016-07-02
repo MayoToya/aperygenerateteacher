@@ -1,0 +1,17 @@
+﻿using System.Windows;
+
+namespace AperyGenerateTeacherGUI
+{
+    /// <summary>
+    /// Interaction logic for App.xaml
+    /// </summary>
+    public partial class App : Application
+    {
+        private void Application_Startup(object sender, StartupEventArgs e)
+        {
+            // Bootstrapperを起動する
+            new Bootstrapper().Run();
+        }
+
+    }
+}
