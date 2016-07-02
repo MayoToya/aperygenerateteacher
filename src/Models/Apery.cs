@@ -8,6 +8,7 @@ using Amazon.Runtime;
 using Amazon.S3.Model;
 using Prism.Mvvm;
 using System.Threading.Tasks;
+using SevenZip.SDK.Compress.LZMA;
 
 namespace AperyGenerateTeacherGUI.Models
 {
@@ -90,11 +91,6 @@ namespace AperyGenerateTeacherGUI.Models
                     }
                 }
 
-                //process.StandardInput.WriteLine("quit");
-                //while ((line = process.StandardOutput.ReadLine()) != null)
-                //    ;
-                //if (!process.HasExited)
-                //    process.Kill();
 
                 #region 教師データシャッフル
 
@@ -112,9 +108,30 @@ namespace AperyGenerateTeacherGUI.Models
                 var process2 = new Process() { StartInfo = startInfo2 };
                 process2.Start();
 
-                if (!process2.HasExited)
-                    process2.Kill();
-                File.Delete(outFile);
+                //元ソースのままだと先に削除する事故が起こりやすかったので
+                while (!File.Exists(shufOutfile))
+                {
+
+                }
+
+                while (File.Exists(outFile))
+                {
+                    try
+                    {
+                        File.Delete(outFile);
+
+                        if (!process2.HasExited)
+                        {
+                            process2.Kill();
+                        }
+
+                        break;
+                    }
+                    catch (Exception)
+                    {
+                        continue;
+                    }
+                }
 
                 this.Log = "教師データシャッフル完了";
                 #endregion
@@ -127,7 +144,6 @@ namespace AperyGenerateTeacherGUI.Models
 
                 this.Log = "教師データ圧縮完了";
                 File.Delete(shufOutfile);
-
                 #endregion
 
                 #region send aws s3
@@ -193,7 +209,7 @@ namespace AperyGenerateTeacherGUI.Models
 
         private static void CompressFile(string inFile, string outFile)
         {
-            var coder = new SevenZip.SDK.Compress.LZMA.Encoder();
+            var coder = new Encoder();
 
             using (var input = new FileStream(inFile, FileMode.Open))
             {
@@ -205,7 +221,6 @@ namespace AperyGenerateTeacherGUI.Models
                     coder.Code(input, output, input.Length, -1, null);
                     output.Flush();
                 }
-
             }
         }
 
