@@ -14,6 +14,7 @@ namespace AperyGenerateTeacherGUI.ViewModels
         public int ThreadMaxValue { get; set; }
         public long TeacherNodes { get; set; }
         public ReactiveProperty<string> ButtonContent { get; set; }
+        public ReactiveProperty<double> Progress { get; private set; } 
 
         private Apery _apery { get; }
 
@@ -50,6 +51,10 @@ namespace AperyGenerateTeacherGUI.ViewModels
                 .ToReactiveCommand()
                 .AddTo(this._disposable);
 
+            this.Progress = this._apery
+                .ObserveProperty(o => o.Progress)
+                .ToReactiveProperty()
+                .AddTo(this._disposable);
 
             this.ButtonClickCommand.Subscribe(_ => this._apery.RunProcessAsync(ProcessorThread, TeacherNodes));
 

@@ -29,6 +29,15 @@ namespace AperyGenerateTeacherGUI.Models
             set { this.SetProperty(ref this._isAperyIdle, value); }
         }
 
+        private double _progress;
+
+        public double Progress
+        {
+            get { return this._progress; }
+            set { this.SetProperty(ref this._progress, value); }
+        }
+    
+
         private readonly Random _random;
         private readonly Process _aperyInstance;
         private static readonly Lazy<Apery> _apery = new Lazy<Apery>(() => new Apery());
@@ -61,20 +70,21 @@ namespace AperyGenerateTeacherGUI.Models
                 //わざわざランダムで生成するのではなくGuidでいいのではと思うのだけど何か理由があるのだろうか
                 var outFile = $"out_{RandomString(20)}.fspe";
 
-                //ReleaseBuildだとこの辺があやしい
                 var cmd = $"make_teacher roots.fsp {outFile} {threads} {teacherNodes}";
                 this._aperyInstance.StandardInput.WriteLine(cmd);
 
-
-                //line = "";
-                //while ((line = this._aperyInstance.StandardOutput.ReadLine()) != null)
                 while (true)
                 {
                     var line = this._aperyInstance.StandardOutput.ReadLine();
                     this.Log = line;
-
+                    
                     if (string.IsNullOrEmpty(line)) continue;
-                    if (Regex.IsMatch(line, "^Made"))
+
+                    if (Regex.IsMatch(line, @"\d+\.\d*%"))
+                    {
+                        Progress = double.Parse(Regex.Match(line, @"\d+\.\d*%").Value.Replace("%", ""));
+                    }
+                    else if (Regex.IsMatch(line, "^Made"))
                     {
                         break;
                     }

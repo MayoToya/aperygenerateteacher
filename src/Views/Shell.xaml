@@ -43,9 +43,12 @@
 
             <TextBox x:Name="BoxLog"
                      Text="{Binding LogText.Value, Mode=OneWay}"
-                     IsEnabled="False" Margin="0,30,0,0"
-                     
+                     IsReadOnly="True"
+                     Margin="0,30,0,0"
                      />
+            <ProgressBar Height="15"
+                         Value="{Binding Progress.Value, Mode=OneWay}"/>
+
         </StackPanel>
     </Grid>
 </Window>
