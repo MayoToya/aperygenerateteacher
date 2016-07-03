@@ -37,12 +37,11 @@ namespace AperyGenerateTeacherGUI.Models
             get { return this._progress; }
             set { this.SetProperty(ref this._progress, value); }
         }
-    
 
         private readonly Random _random;
         private readonly Process _aperyInstance;
         private static readonly Lazy<Apery> _apery = new Lazy<Apery>(() => new Apery());
-
+        
         public static Apery Instance => _apery.Value;
 
         private Apery()
@@ -97,7 +96,7 @@ namespace AperyGenerateTeacherGUI.Models
                 this.Log = "教師データシャッフル中";
 
                 var shufOutfile = $"shuf{outFile}";
-                var startInfo2 = new ProcessStartInfo("shuffle_fspe.exe", $"{outFile}  {shufOutfile}")
+                var shuffleStartInfo = new ProcessStartInfo("shuffle_fspe.exe", $"{outFile}  {shufOutfile}")
                 {
                     CreateNoWindow = true,
                     RedirectStandardInput = true,
@@ -105,10 +104,11 @@ namespace AperyGenerateTeacherGUI.Models
                     UseShellExecute = false
                 };
 
-                var process2 = new Process() { StartInfo = startInfo2 };
-                process2.Start();
+                var process = new Process() { StartInfo = shuffleStartInfo };
+                process.Start();
+                process.WaitForExit(); //本家v1.0.1から
 
-                //元ソースのままだと先に削除する事故が起こりやすかったので
+                //v1.0.0元ソースのままだと先に削除する事故が起こりやすかったので
                 while (!File.Exists(shufOutfile))
                 {
 
@@ -120,9 +120,9 @@ namespace AperyGenerateTeacherGUI.Models
                     {
                         File.Delete(outFile);
 
-                        if (!process2.HasExited)
+                        if (!process.HasExited)
                         {
-                            process2.Kill();
+                            process.Kill();
                         }
 
                         break;
@@ -166,7 +166,7 @@ namespace AperyGenerateTeacherGUI.Models
                     {
                         var request = new PutObjectRequest
                         {
-                            BucketName = "apery-teacher",
+                            BucketName = "apery-teacher-v1.0.1",
                             FilePath = filePath,
                         };
 
@@ -201,8 +201,6 @@ namespace AperyGenerateTeacherGUI.Models
                 //ファイル送信のループ処理がないなら削除するタイミングはここでは
                 File.Delete(filePath);
             }
-
-
         }
 
 
@@ -236,14 +234,11 @@ namespace AperyGenerateTeacherGUI.Models
                     // TODO: dispose managed state (managed objects).
 
                     //処理していないか処理中でも強制終了させたいかの二択なので雑にkillでいいんじゃなかろうか
-                    //this._aperyInstance.StandardInput.WriteLine("quit");
+                    if (!this._aperyInstance.HasExited)
+                    {
+                        this._aperyInstance.Kill();
+                    }
 
-                    //while (this._aperyInstance.StandardOutput.ReadLine() != null)
-                    //{
-                    //    if (!this._aperyInstance.HasExited)
-
-                    this._aperyInstance.Kill();
-                    //}
                 }
 
                 // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.
