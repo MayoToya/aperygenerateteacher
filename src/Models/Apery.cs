@@ -8,6 +8,7 @@ using Amazon.Runtime;
 using Amazon.S3.Model;
 using Prism.Mvvm;
 using System.Threading.Tasks;
+using SevenZip.SDK.Compress.LZMA;
 
 namespace AperyGenerateTeacherGUI.Models
 {
@@ -29,10 +30,18 @@ namespace AperyGenerateTeacherGUI.Models
             set { this.SetProperty(ref this._isAperyIdle, value); }
         }
 
+        private double _progress;
+
+        public double Progress
+        {
+            get { return this._progress; }
+            set { this.SetProperty(ref this._progress, value); }
+        }
+
         private readonly Random _random;
         private readonly Process _aperyInstance;
         private static readonly Lazy<Apery> _apery = new Lazy<Apery>(() => new Apery());
-
+        
         public static Apery Instance => _apery.Value;
 
         private Apery()
@@ -61,36 +70,33 @@ namespace AperyGenerateTeacherGUI.Models
                 //わざわざランダムで生成するのではなくGuidでいいのではと思うのだけど何か理由があるのだろうか
                 var outFile = $"out_{RandomString(20)}.fspe";
 
-
                 var cmd = $"make_teacher roots.fsp {outFile} {threads} {teacherNodes}";
                 this._aperyInstance.StandardInput.WriteLine(cmd);
 
-                var line = "";
-
-                while ((line = this._aperyInstance.StandardOutput.ReadLine()) != null)
+                while (true)
                 {
+                    var line = this._aperyInstance.StandardOutput.ReadLine();
                     this.Log = line;
+                    
+                    if (string.IsNullOrEmpty(line)) continue;
 
-                    if (Regex.IsMatch(line, "^Made"))
+                    if (Regex.IsMatch(line, @"\d+\.\d*%"))
+                    {
+                        Progress = double.Parse(Regex.Match(line, @"\d+\.\d*%").Value.Replace("%", ""));
+                    }
+                    else if (Regex.IsMatch(line, "^Made"))
                     {
                         break;
                     }
                 }
 
 
-                //ここでプロセス殺さない
-                //process.StandardInput.WriteLine("quit");
-                //while ((line = process.StandardOutput.ReadLine()) != null)
-                //    ;
-                //if (!process.HasExited)
-                //    process.Kill();
-
                 #region 教師データシャッフル
 
                 this.Log = "教師データシャッフル中";
 
                 var shufOutfile = $"shuf{outFile}";
-                var startInfo2 = new ProcessStartInfo("shuffle_fspe.exe", $"{outFile}  {shufOutfile}")
+                var shuffleStartInfo = new ProcessStartInfo("shuffle_fspe.exe", $"{outFile}  {shufOutfile}")
                 {
                     CreateNoWindow = true,
                     RedirectStandardInput = true,
@@ -98,12 +104,34 @@ namespace AperyGenerateTeacherGUI.Models
                     UseShellExecute = false
                 };
 
-                var process2 = new Process() { StartInfo = startInfo2 };
-                process2.Start();
+                var process = new Process() { StartInfo = shuffleStartInfo };
+                process.Start();
+                process.WaitForExit(); //本家v1.0.1から
 
-                if (!process2.HasExited)
-                    process2.Kill();
-                File.Delete(outFile);
+                //v1.0.0元ソースのままだと先に削除する事故が起こりやすかったので
+                while (!File.Exists(shufOutfile))
+                {
+
+                }
+
+                while (File.Exists(outFile))
+                {
+                    try
+                    {
+                        File.Delete(outFile);
+
+                        if (!process.HasExited)
+                        {
+                            process.Kill();
+                        }
+
+                        break;
+                    }
+                    catch (Exception)
+                    {
+                        continue;
+                    }
+                }
 
                 this.Log = "教師データシャッフル完了";
                 #endregion
@@ -116,7 +144,6 @@ namespace AperyGenerateTeacherGUI.Models
 
                 this.Log = "教師データ圧縮完了";
                 File.Delete(shufOutfile);
-
                 #endregion
 
                 #region send aws s3
@@ -139,7 +166,7 @@ namespace AperyGenerateTeacherGUI.Models
                     {
                         var request = new PutObjectRequest
                         {
-                            BucketName = "apery-teacher",
+                            BucketName = "apery-teacher-v1.0.1",
                             FilePath = filePath,
                         };
 
@@ -174,15 +201,13 @@ namespace AperyGenerateTeacherGUI.Models
                 //ファイル送信のループ処理がないなら削除するタイミングはここでは
                 File.Delete(filePath);
             }
-
-
         }
 
 
 
         private static void CompressFile(string inFile, string outFile)
         {
-            var coder = new SevenZip.SDK.Compress.LZMA.Encoder();
+            var coder = new Encoder();
 
             using (var input = new FileStream(inFile, FileMode.Open))
             {
@@ -194,7 +219,6 @@ namespace AperyGenerateTeacherGUI.Models
                     coder.Code(input, output, input.Length, -1, null);
                     output.Flush();
                 }
-
             }
         }
 
@@ -210,14 +234,11 @@ namespace AperyGenerateTeacherGUI.Models
                     // TODO: dispose managed state (managed objects).
 
                     //処理していないか処理中でも強制終了させたいかの二択なので雑にkillでいいんじゃなかろうか
-                    //this._aperyInstance.StandardInput.WriteLine("quit");
+                    if (!this._aperyInstance.HasExited)
+                    {
+                        this._aperyInstance.Kill();
+                    }
 
-                    //while (this._aperyInstance.StandardOutput.ReadLine() != null)
-                    //{
-                    //    if (!this._aperyInstance.HasExited)
-
-                    this._aperyInstance.Kill();
-                    //}
                 }
 
                 // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.

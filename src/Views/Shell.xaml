@@ -31,21 +31,28 @@
                 <TextBox Width="120"
                          Text="{Binding TeacherNodes, Mode=TwoWay}" Margin="10,0,0,0" />
             </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,30,0,0">
+                <Label Content="{Binding FileCheckStatus.Value, Mode=OneWay}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Label Content="{Binding AlertMessage.Value, Mode=OneWay}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+            </StackPanel>
             <Button x:Name="Button"
                     Content="{Binding ButtonContent.Value}"
                     Height="30"
                     Width="100"
                     VerticalAlignment="Center"
                     HorizontalAlignment="Center"
-                    Margin="0,30,0,0"
+                    Margin="0,0,0,30"
                     Command="{Binding ButtonClickCommand, Mode=OneWay}"
                     />
 
             <TextBox x:Name="BoxLog"
                      Text="{Binding LogText.Value, Mode=OneWay}"
-                     IsEnabled="False" Margin="0,30,0,0"
-                     
+                     IsReadOnly="True"
+                     Margin="0,0,0,0"
                      />
+            <ProgressBar Height="15"
+                         Value="{Binding Progress.Value, Mode=OneWay}"/>
+
         </StackPanel>
     </Grid>
 </Window>
