@@ -49,9 +49,9 @@ namespace AperyGenerateTeacherGUI.Models
         }
 
         //ファイルの存在確認もここでやる
-        private async Task<bool> FileIsOkAsync(string fileName, long fileLength, string fileHash)
+        private static async Task<bool> FileIsOkAsync(string fileName, long fileLength, string fileHash)
         {
-            return await System.Threading.Tasks.Task.Run(() =>
+            return await Task.Run(() =>
               {
                   if (!File.Exists(fileName))
                   {

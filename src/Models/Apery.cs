@@ -9,6 +9,7 @@ using Amazon.S3.Model;
 using Prism.Mvvm;
 using System.Threading.Tasks;
 using SevenZip.SDK.Compress.LZMA;
+using System.Reactive.Linq;
 
 namespace AperyGenerateTeacherGUI.Models
 {
@@ -38,10 +39,12 @@ namespace AperyGenerateTeacherGUI.Models
             set { this.SetProperty(ref this._progress, value); }
         }
 
+        private string _outFile;
         private readonly Random _random;
         private readonly Process _aperyInstance;
+        private readonly IDisposable _aperyStandardOutput;
         private static readonly Lazy<Apery> _apery = new Lazy<Apery>(() => new Apery());
-        
+
         public static Apery Instance => _apery.Value;
 
         private Apery()
@@ -58,45 +61,44 @@ namespace AperyGenerateTeacherGUI.Models
             this._aperyInstance.Start();
             this.IsAperyIdle = true;
             this._random = new Random();
+
+            this._aperyStandardOutput = Observable.FromEvent<DataReceivedEventHandler, DataReceivedEventArgs>(
+                    h => (sender, e) => h(e),
+                    h => this._aperyInstance.OutputDataReceived += h,
+                    h => this._aperyInstance.OutputDataReceived -= h)
+                    .TakeUntil(Observable.FromEventPattern(
+                        h => this._aperyInstance.Exited += h,
+                        h => this._aperyInstance.Exited -= h))
+                 .Subscribe(e =>
+                 {
+                     var line = e.Data;
+
+                     if (!string.IsNullOrEmpty(line))
+                     {
+                         this.Log = line;
+                     }
+
+                     if (Regex.IsMatch(line, @"\d+\.\d*%"))
+                     {
+                         Progress = double.Parse(Regex.Match(line, @"\d+\.\d*%").Value.Replace("%", ""));
+                     }
+                     else if (Regex.IsMatch(line, "^Made"))
+                     {
+                         this._aperyInstance.CancelOutputRead();
+                         TreatResultAsync();
+                     }
+                 });
         }
 
-        public async void RunProcessAsync(short threads, long teacherNodes)
+        private async void TreatResultAsync()
         {
-
             await Task.Run(() =>
             {
-                this.IsAperyIdle = false;
-
-                //わざわざランダムで生成するのではなくGuidでいいのではと思うのだけど何か理由があるのだろうか
-                var outFile = $"out_{RandomString(20)}.fspe";
-
-                var cmd = $"make_teacher roots.fsp {outFile} {threads} {teacherNodes}";
-                this._aperyInstance.StandardInput.WriteLine(cmd);
-
-                while (true)
-                {
-                    var line = this._aperyInstance.StandardOutput.ReadLine();
-                    this.Log = line;
-                    
-                    if (string.IsNullOrEmpty(line)) continue;
-
-                    if (Regex.IsMatch(line, @"\d+\.\d*%"))
-                    {
-                        Progress = double.Parse(Regex.Match(line, @"\d+\.\d*%").Value.Replace("%", ""));
-                    }
-                    else if (Regex.IsMatch(line, "^Made"))
-                    {
-                        break;
-                    }
-                }
-
-
                 #region 教師データシャッフル
-
                 this.Log = "教師データシャッフル中";
 
-                var shufOutfile = $"shuf{outFile}";
-                var shuffleStartInfo = new ProcessStartInfo("shuffle_fspe.exe", $"{outFile}  {shufOutfile}")
+                var shufOutfile = $"shuf{_outFile}";
+                var shuffleStartInfo = new ProcessStartInfo("shuffle_fspe.exe", $"{_outFile}  {shufOutfile}")
                 {
                     CreateNoWindow = true,
                     RedirectStandardInput = true,
@@ -104,35 +106,13 @@ namespace AperyGenerateTeacherGUI.Models
                     UseShellExecute = false
                 };
 
-                var process = new Process() { StartInfo = shuffleStartInfo };
-                process.Start();
-                process.WaitForExit(); //本家v1.0.1から
-
-                //v1.0.0元ソースのままだと先に削除する事故が起こりやすかったので
-                while (!File.Exists(shufOutfile))
+                using (var process = new Process() { StartInfo = shuffleStartInfo })
                 {
-
+                    process.Start();
+                    process.WaitForExit(); //本家v1.0.1から
                 }
 
-                while (File.Exists(outFile))
-                {
-                    try
-                    {
-                        File.Delete(outFile);
-
-                        if (!process.HasExited)
-                        {
-                            process.Kill();
-                        }
-
-                        break;
-                    }
-                    catch (Exception)
-                    {
-                        continue;
-                    }
-                }
-
+                File.Delete(_outFile);
                 this.Log = "教師データシャッフル完了";
                 #endregion
 
@@ -151,6 +131,21 @@ namespace AperyGenerateTeacherGUI.Models
                 #endregion
 
                 this.IsAperyIdle = true;
+
+            });
+
+        }
+
+
+        public async void RunProcessAsync(short threads, long teacherNodes)
+        {
+            await Task.Run(() =>
+            {
+                this.IsAperyIdle = false;
+                this._outFile = $"out_{RandomString(20)}.fspe";
+                var cmd = $"make_teacher roots.fsp {this._outFile} {threads} {teacherNodes}";
+                this._aperyInstance.StandardInput.WriteLine(cmd);
+                this._aperyInstance.BeginOutputReadLine();
             })
             ;
         }
@@ -232,13 +227,8 @@ namespace AperyGenerateTeacherGUI.Models
                 if (disposing)
                 {
                     // TODO: dispose managed state (managed objects).
-
-                    //処理していないか処理中でも強制終了させたいかの二択なので雑にkillでいいんじゃなかろうか
-                    if (!this._aperyInstance.HasExited)
-                    {
-                        this._aperyInstance.Kill();
-                    }
-
+                    this._aperyInstance.Dispose();
+                    this._aperyStandardOutput.Dispose();
                 }
 
                 // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.
