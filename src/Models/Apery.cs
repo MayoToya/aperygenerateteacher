@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Net;
 using System.Text.RegularExpressions;
 using Amazon;
 using Amazon.S3;
@@ -73,10 +75,9 @@ namespace AperyGenerateTeacherGUI.Models
                  {
                      var line = e.Data;
 
-                     if (!string.IsNullOrEmpty(line))
-                     {
-                         this.Log = line;
-                     }
+                     if (string.IsNullOrEmpty(line)) return;
+
+                     this.Log = line;
 
                      if (Regex.IsMatch(line, @"\d+\.\d*%"))
                      {
@@ -92,13 +93,15 @@ namespace AperyGenerateTeacherGUI.Models
 
         private async void TreatResultAsync()
         {
+            var shufOutfile = $"shuf{_outFile}";
+
             await Task.Run(() =>
             {
                 #region 教師データシャッフル
+
                 this.Log = "教師データシャッフル中";
 
-                var shufOutfile = $"shuf{_outFile}";
-                var shuffleStartInfo = new ProcessStartInfo("shuffle_fspe.exe", $"{_outFile}  {shufOutfile}")
+                var shuffleStartInfo = new ProcessStartInfo("shuffle_hcpe.exe", $"{_outFile}  {shufOutfile}")
                 {
                     CreateNoWindow = true,
                     RedirectStandardInput = true,
@@ -114,26 +117,43 @@ namespace AperyGenerateTeacherGUI.Models
 
                 File.Delete(_outFile);
                 this.Log = "教師データシャッフル完了";
+
                 #endregion
-
-                #region 教師データ圧縮
-                this.Log = "教師データ圧縮中";
-
-                var outCompressedFile = $"{shufOutfile}.7z";
-                CompressFile(shufOutfile, outCompressedFile);
-
-                this.Log = "教師データ圧縮完了";
-                File.Delete(shufOutfile);
-                #endregion
-
-                #region send aws s3
-                SendResultToAws(outCompressedFile);
-                #endregion
-
-                this.IsAperyIdle = true;
-
             });
 
+//            #region 教師データ圧縮
+//            this.Log = "教師データ圧縮中";
+
+//            var outCompressedFile = $"{shufOutfile}.7z";
+
+//            if (await CompressFileAsync(shufOutfile, outCompressedFile))
+//            {
+//                this.Log = "教師データ圧縮完了";
+//                File.Delete(shufOutfile);
+
+//                #endregion
+
+//                #region send aws s3
+//#if DEBUG
+//    /*
+//#endif
+//                await SendResultToAwsAsync(outCompressedFile);
+//#if DEBUG
+//                */
+//#endif
+//                #endregion
+
+//            }
+//            else
+//            {
+//                this.Log = "教師データの圧縮に失敗しました";
+//                File.Delete(shufOutfile);
+//            }
+
+            await SendResultToAwsAsync(shufOutfile);
+            File.Delete(shufOutfile);
+
+            this.IsAperyIdle = true;
         }
 
 
@@ -142,13 +162,76 @@ namespace AperyGenerateTeacherGUI.Models
             await Task.Run(() =>
             {
                 this.IsAperyIdle = false;
-                this._outFile = $"out_{RandomString(20)}.fspe";
-                var cmd = $"make_teacher roots.fsp {this._outFile} {threads} {teacherNodes}";
-                this._aperyInstance.StandardInput.WriteLine(cmd);
+                this._outFile = $"out_{RandomString(20)}.hcpe";
+                this._aperyInstance.StandardInput.WriteLine($"make_teacher roots.hcp {this._outFile} {threads} {teacherNodes}");
                 this._aperyInstance.BeginOutputReadLine();
             })
             ;
         }
+
+        public void RunProcess(short threads, long teacherNodes)
+        {
+            this.IsAperyIdle = false;
+            this._outFile = $"out_{RandomString(20)}.hcpe";
+            this._aperyInstance.StandardInput.WriteLine($"make_teacher roots.hcp {this._outFile} {threads} {teacherNodes}");
+            this.Log = "Start";
+            this._aperyInstance.BeginOutputReadLine();
+        }
+
+        private async Task SendResultToAwsAsync(string filePath)
+        {
+            try
+            {
+                using (var amazonS3Client = new AmazonS3Client(new AnonymousAWSCredentials(), RegionEndpoint.USWest1))
+                {
+
+                    try
+                    {
+                        var request = new PutObjectRequest
+                        {
+                            BucketName = "apery-teacher-v1.0.3",
+                            FilePath = filePath,
+                        };
+
+                        var response = await amazonS3Client.PutObjectAsync(request);
+
+                        if (response.HttpStatusCode == HttpStatusCode.Accepted)
+                        {
+                            this.Log = "サーバーに教師データを送信完了しました。ご協力ありがとうございました。";
+                        }
+                        else
+                        {
+                            this.Log = "サーバーに何か問題あるかも？";
+                        }
+                    }
+                    catch (AmazonS3Exception amazonS3Excetion)
+                    {
+                        if (amazonS3Excetion.ErrorCode != null &&
+                            (amazonS3Excetion.ErrorCode.Equals("InvalidAccessKeyId") ||
+                             amazonS3Excetion.ErrorCode.Equals("InvalidSeculity")))
+                        {
+                            this.Log = "サーバーにアクセス出来ませんでした。";
+                        }
+                        else
+                        {
+                            this.Log = "サーバーへの教師データデータ送信に失敗しました。";
+                        }
+                    }
+
+                }
+            }
+            catch (Exception)
+            {
+                this.Log = "サーバー接続に失敗しました。";
+            }
+            finally
+            {
+                //ファイル送信のループ処理がないなら削除するタイミングはここでは
+                File.Delete(filePath);
+            }
+
+        }
+
 
         private void SendResultToAws(string filePath)
         {
@@ -165,7 +248,11 @@ namespace AperyGenerateTeacherGUI.Models
                             FilePath = filePath,
                         };
 
-                        var response = amazonS3Client.PutObject(request);
+
+                        var response =
+                            amazonS3Client
+                            .PutObject(request)
+                            ;
 
                         this.Log = "サーバーに教師データを送信完了しました。ご協力ありがとうございました。";
 
@@ -217,6 +304,33 @@ namespace AperyGenerateTeacherGUI.Models
             }
         }
 
+        private static async Task<bool> CompressFileAsync(string inFile, string outFile)
+        {
+            try
+            {
+                var coder = new Encoder();
+
+                using (var input = new FileStream(inFile, FileMode.Open))
+                {
+                    using (var output = new FileStream(outFile, FileMode.Create))
+                    {
+                        coder.WriteCoderProperties(output);
+                        output.Write(BitConverter.GetBytes(input.Length), 0, 8);
+
+                        coder.Code(input, output, input.Length, -1, null);
+                        await output.FlushAsync();
+
+                        return true;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+
         #region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
 
@@ -227,7 +341,12 @@ namespace AperyGenerateTeacherGUI.Models
                 if (disposing)
                 {
                     // TODO: dispose managed state (managed objects).
+                    if (!this._aperyInstance.HasExited)
+                    {
+                        this._aperyInstance.Kill();
+                    }
                     this._aperyInstance.Dispose();
+
                     this._aperyStandardOutput.Dispose();
                 }
 
@@ -254,13 +373,18 @@ namespace AperyGenerateTeacherGUI.Models
         }
         #endregion
 
-        private string RandomString(int length)
+        private string RandomString(int stringLength)
         {
-            var candidates = "0123456789abcdefghijklmnopqrstuvwxyz";
-            var list = new char[length];
-            for (var i = 0; i < length; ++i)
-                list[i] = candidates[this._random.Next(0, candidates.Length)];
-            return new string(list);
+            const string candidates = "0123456789abcdefghijklmnopqrstuvwxyz";
+            var candidatesLength = candidates.Length;
+
+            return new string(
+                Enumerable.Range(1, stringLength)
+                .AsParallel()
+                .Select(_ => candidates[this._random.Next(candidatesLength)])
+                .ToArray()
+                );
+
         }
 
 

@@ -90,7 +90,7 @@ namespace AperyGenerateTeacherGUI.ViewModels
             .ToReactiveCommand()
             ;
 
-            this.ButtonClickCommand.Subscribe(_ => this._apery.RunProcessAsync(ProcessorThread, TeacherNodes));
+            this.ButtonClickCommand.Subscribe(_ => this._apery.RunProcess(ProcessorThread, TeacherNodes));
         }
 
         ~ShellViewModel()
